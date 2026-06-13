@@ -1,337 +1,483 @@
-import { useState, type FormEvent } from 'react'
-import { motion } from 'framer-motion'
-import { Toaster, toast } from 'sonner'
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Toaster, toast } from "sonner";
 
-const CONTRACT = '0xB0A44D12b898C641f2DD3d97c5268be076a56B80'
+const CONTRACT = "0xB0A44D12b898C641f2DD3d97c5268be076a56B80";
 
 interface Condition {
-  text: string
-  met: boolean
+  id: number;
+  text: string;
 }
 
-interface Will {
-  id: string
-  title: string
-  beneficiary: string
-  conditions: Condition[]
-  triggered: boolean
-  checking?: boolean
+interface WillState {
+  conditions: Condition[];
+  beneficiary: string;
+  beneficiaryAddr: string;
+  asset: string;
+  source: string;
+  sourceLabel: string;
 }
-
-const SEED_WILLS: Will[] = [
-  {
-    id: 'WILL-007',
-    title: 'Estate of A. Whitman',
-    beneficiary: '0x91…beneficiary.eth',
-    conditions: [
-      { text: 'No verified activity on owner address for 365 days', met: true },
-      { text: 'Death certificate reference present in registry feed', met: true },
-      { text: 'No active dispute filed by named executors', met: true },
-    ],
-    triggered: true,
-  },
-  {
-    id: 'WILL-006',
-    title: 'Legacy Trust — Coastal Property',
-    beneficiary: 'maria.lex.eth',
-    conditions: [
-      { text: 'Beneficiary reaches the age of 25', met: true },
-      { text: 'Probate court ruling published to oracle', met: false },
-    ],
-    triggered: false,
-  },
-  {
-    id: 'WILL-005',
-    title: 'Founders Vesting Bequest',
-    beneficiary: '0x4c…heirs.eth',
-    conditions: [
-      { text: 'Company acquisition confirmed by filing', met: false },
-      { text: 'Owner inactivity window of 180 days elapsed', met: false },
-    ],
-    triggered: false,
-  },
-]
 
 const STEPS = [
-  { n: 'I', title: 'Draft the conditions', body: 'Write your wishes in plain language — "if I am inactive for a year, transfer to my daughter." No legalese, no code.' },
-  { n: 'II', title: 'Name the beneficiary', body: 'Bind the estate to a wallet or ENS name and point the executor at the data sources that prove each condition.' },
-  { n: 'III', title: 'Validators watch', body: 'GenLayer validators periodically read live data and judge, in consensus, whether your conditions are satisfied.' },
-  { n: 'IV', title: 'The transfer triggers', body: 'When every condition is met, the bequest executes on-chain — dignified, automatic, and tamper-proof.' },
-]
+  { key: "conditions", title: "Conditions", caption: "Define the triggers" },
+  { key: "beneficiary", title: "Beneficiary", caption: "Name the heir" },
+  { key: "source", title: "Check Source", caption: "Verify against data" },
+  { key: "review", title: "Review & Seal", caption: "Commit on-chain" },
+] as const;
 
-const FEATURES = [
-  { icon: '✒︎', title: 'Plain-language clauses', body: 'Express intent the way you would to a trusted solicitor. The words themselves are the instruction set.' },
-  { icon: '⚖︎', title: 'Consensus verification', body: 'No single oracle decides. A validator set independently confirms each condition before anything moves.' },
-  { icon: '🜂', title: 'Live-data conditions', body: 'Conditions can reference registries, activity feeds, or public filings — checked against the real world.' },
-  { icon: '🛡︎', title: 'Tamper-proof execution', body: 'Once recorded, your wishes cannot be quietly altered by an intermediary or contested institution.' },
-  { icon: '🕊︎', title: 'Dignified by design', body: 'A solemn, transparent process that honours your intent without exposing your family to friction.' },
-  { icon: '⏳', title: 'Patient & autonomous', body: 'The executor waits as long as it must, re-checking conditions until the moment they are finally satisfied.' },
-]
+const SOURCES = [
+  { id: "registry", label: "National death registry (oracle)" },
+  { id: "inactivity", label: "On-chain inactivity (dead-man switch)" },
+  { id: "medical", label: "Attested medical record feed" },
+  { id: "court", label: "Probate court attestation" },
+];
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
-  show: { opacity: 1, y: 0 },
-}
+let _cid = 10;
 
-export default function App() {
-  const [wills, setWills] = useState<Will[]>(SEED_WILLS)
-  const [title, setTitle] = useState('')
-  const [conditions, setConditions] = useState('')
-  const [beneficiary, setBeneficiary] = useState('')
-  const [checking, setChecking] = useState(false)
+const initialWill: WillState = {
+  conditions: [
+    { id: 1, text: "Confirmed deceased per national registry oracle." },
+    { id: 2, text: "No wallet activity for 180 consecutive days." },
+  ],
+  beneficiary: "",
+  beneficiaryAddr: "",
+  asset: "12.5 ETH + estate vault NFTs",
+  source: "registry",
+  sourceLabel: SOURCES[0].label,
+};
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!conditions.trim() || !beneficiary.trim()) {
-      toast.error('Conditions and beneficiary are required.')
-      return
+function App() {
+  const [step, setStep] = useState(0);
+  const [will, setWill] = useState<WillState>(initialWill);
+  const [sealed, setSealed] = useState(false);
+  const [checks, setChecks] = useState<Record<number, boolean>>({});
+  const [checking, setChecking] = useState(false);
+
+  const set = <K extends keyof WillState>(key: K, value: WillState[K]) =>
+    setWill((w) => ({ ...w, [key]: value }));
+
+  const addCondition = () =>
+    setWill((w) => ({
+      ...w,
+      conditions: [...w.conditions, { id: ++_cid, text: "" }],
+    }));
+
+  const updateCondition = (id: number, text: string) =>
+    setWill((w) => ({
+      ...w,
+      conditions: w.conditions.map((c) => (c.id === id ? { ...c, text } : c)),
+    }));
+
+  const removeCondition = (id: number) =>
+    setWill((w) => ({
+      ...w,
+      conditions: w.conditions.filter((c) => c.id !== id),
+    }));
+
+  const canAdvance = (): boolean => {
+    if (step === 0)
+      return will.conditions.filter((c) => c.text.trim()).length >= 1;
+    if (step === 1)
+      return will.beneficiary.trim().length > 0 && /^0x/.test(will.beneficiaryAddr.trim());
+    return true;
+  };
+
+  const next = () => {
+    if (!canAdvance()) {
+      if (step === 0) toast.error("Add at least one condition.");
+      else if (step === 1)
+        toast.error("Enter a beneficiary name and a 0x… address.");
+      return;
     }
-    const id = `WILL-${String(8 + wills.length).padStart(3, '0')}`
-    const condList: Condition[] = conditions
-      .split('\n')
-      .map((c) => c.trim())
-      .filter(Boolean)
-      .slice(0, 5)
-      .map((text) => ({ text, met: false }))
-    if (condList.length === 0) condList.push({ text: conditions.trim(), met: false })
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  };
+  const back = () => setStep((s) => Math.max(s - 1, 0));
 
-    const fresh: Will = {
-      id,
-      title: title.trim() || 'Untitled Bequest',
-      beneficiary: beneficiary.trim(),
-      conditions: condList,
-      triggered: false,
-      checking: true,
-    }
-    setWills((w) => [fresh, ...w])
-    setChecking(true)
-    toast(`${id} recorded — validators reviewing the conditions…`, { icon: '🕯️' })
+  const runSourceCheck = () => {
+    setChecking(true);
+    setChecks({});
+    toast.loading("AI verifying conditions against the source…", { id: "chk" });
+    const live = will.conditions.filter((c) => c.text.trim());
+    live.forEach((c, i) => {
+      setTimeout(
+        () => {
+          setChecks((prev) => ({ ...prev, [c.id]: true }));
+          if (i === live.length - 1) {
+            setChecking(false);
+            toast.success("All conditions evaluated against the source.", {
+              id: "chk",
+            });
+          }
+        },
+        700 * (i + 1)
+      );
+    });
+  };
 
-    setTimeout(() => {
-      const allMet = (title.length + beneficiary.length) % 4 !== 0
-      setWills((w) =>
-        w.map((will) =>
-          will.id === id
-            ? {
-                ...will,
-                checking: false,
-                triggered: allMet,
-                conditions: will.conditions.map((c, i) => ({
-                  ...c,
-                  met: allMet ? true : i < will.conditions.length - 1,
-                })),
-              }
-            : will,
-        ),
-      )
-      setChecking(false)
-      if (allMet) {
-        toast.success(`${id} — all conditions met. Transfer executed to ${fresh.beneficiary}.`)
-      } else {
-        toast(`${id} — conditions pending. The executor will keep watch.`, { icon: '⏳' })
-      }
-      setTitle('')
-      setConditions('')
-      setBeneficiary('')
-    }, 3000)
-  }
+  const seal = () => {
+    setSealed(true);
+    toast.success("Will sealed and committed on-chain ⚜", { id: "seal" });
+  };
+
+  const allChecked =
+    will.conditions.filter((c) => c.text.trim()).length > 0 &&
+    will.conditions
+      .filter((c) => c.text.trim())
+      .every((c) => checks[c.id]);
 
   return (
-    <div className="min-h-screen text-[#e8e3d6] overflow-x-hidden">
-      <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: '#242017', border: '1px solid #c9a22744', color: '#e8e3d6', fontFamily: 'EB Garamond, serif' } }} />
+    <div className="min-h-screen bg-[#1A1A1A] text-[#e8e3d6]">
+      <Toaster theme="dark" position="top-center" richColors />
 
-      {/* NAV */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-[#1a1a1a]/85 border-b border-[#c9a227]/20">
-        <nav className="max-w-6xl mx-auto px-6 h-[72px] flex items-center justify-between">
-          <a href="#top" className="flex items-center gap-3">
-            <span className="grid place-items-center w-10 h-10 rounded-full border border-[#c9a227] text-[#c9a227] font-display text-xl">W</span>
-            <span className="font-display text-2xl tracking-wide">Will<span className="text-[#c9a227]">Executor</span></span>
-          </a>
-          <div className="hidden md:flex items-center gap-9 text-[15px] text-[#b6ad97]">
-            <a href="#how" className="hover:text-[#c9a227] transition">Process</a>
-            <a href="#features" className="hover:text-[#c9a227] transition">Assurances</a>
-            <a href="#registry" className="hover:text-[#c9a227] transition">Registry</a>
+      {/* solemn masthead */}
+      <header className="border-b border-[#c9a227]/20 px-6 py-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="font-display text-2xl text-[#c9a227]">⚜</span>
+            <div>
+              <h1 className="font-display text-xl font-semibold tracking-wide text-[#f3eee0]">
+                WillExecutor
+              </h1>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-[#c9a227]/60">
+                Autonomous Estate Instrument
+              </p>
+            </div>
           </div>
-          <a href="#demo" className="text-[15px] px-5 py-2 rounded-sm border border-[#c9a227] text-[#c9a227] hover:bg-[#c9a227] hover:text-[#1a1a1a] transition">
-            Record a will
-          </a>
-        </nav>
+          <p className="hidden font-mono text-[10px] text-[#e8e3d6]/30 sm:block">
+            {CONTRACT}
+          </p>
+        </div>
+        <div className="gold-rule mx-auto mt-6 h-px max-w-5xl" />
       </header>
 
-      {/* HERO */}
-      <section id="top" className="relative">
-        <div className="max-w-6xl mx-auto px-6 pt-28 pb-28 text-center">
-          <motion.p
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7 }}
-            className="text-[#c9a227] tracking-[0.3em] text-xs uppercase mb-6">
-            Autonomous Estate Execution
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}
-            className="font-display text-5xl md:text-7xl leading-[1.08] max-w-4xl mx-auto">
-            Your final wishes,
-            <span className="block text-[#c9a227] italic">faithfully carried out.</span>
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.15 }}
-            className="mt-8 text-xl text-[#b6ad97] max-w-2xl mx-auto leading-relaxed">
-            Write your conditions in plain language. GenLayer validators verify them against live data
-            and execute the transfer the moment they are met — no court, no custodian, no doubt.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.3 }}
-            className="mt-11 flex flex-wrap items-center justify-center gap-4">
-            <a href="#demo" className="px-7 py-3.5 rounded-sm bg-[#c9a227] text-[#1a1a1a] font-medium tracking-wide hover:bg-[#d9b43a] transition">
-              Record a will
-            </a>
-            <a href="#how" className="px-7 py-3.5 rounded-sm border border-[#c9a227]/40 text-[#e8e3d6] hover:border-[#c9a227] transition">
-              Understand the process
-            </a>
-          </motion.div>
-          <div className="mx-auto mt-16 h-px w-40 gold-rule" />
-        </div>
-      </section>
+      <main className="mx-auto grid max-w-5xl gap-10 px-6 py-12 md:grid-cols-[220px_1fr]">
+        {/* vertical stepper rail */}
+        <nav aria-label="Progress" className="md:pt-2">
+          <ol className="relative space-y-7">
+            <span className="absolute left-[15px] top-2 h-[calc(100%-2rem)] w-px bg-[#c9a227]/20" />
+            {STEPS.map((s, i) => {
+              const state =
+                i < step ? "done" : i === step ? "active" : "todo";
+              return (
+                <li key={s.key} className="relative flex items-start gap-3">
+                  <span
+                    className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-display text-sm transition ${
+                      state === "active"
+                        ? "border-[#c9a227] bg-[#c9a227] text-[#1A1A1A]"
+                        : state === "done"
+                          ? "border-[#c9a227]/60 bg-[#1A1A1A] text-[#c9a227]"
+                          : "border-[#e8e3d6]/20 bg-[#1A1A1A] text-[#e8e3d6]/30"
+                    }`}
+                  >
+                    {state === "done" ? "✓" : i + 1}
+                  </span>
+                  <div className="pt-1">
+                    <p
+                      className={`font-display text-base leading-none ${
+                        state === "todo"
+                          ? "text-[#e8e3d6]/40"
+                          : "text-[#f3eee0]"
+                      }`}
+                    >
+                      {s.title}
+                    </p>
+                    <p className="mt-1 text-[11px] italic text-[#e8e3d6]/35">
+                      {s.caption}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
 
-      {/* HOW IT WORKS */}
-      <section id="how" className="max-w-6xl mx-auto px-6 py-24">
-        <SectionHead kicker="The Process" title="Four steps, faithfully observed" />
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mt-14">
-          {STEPS.map((s, i) => (
-            <motion.div
-              key={s.n}
-              variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
-              transition={{ duration: 0.55, delay: i * 0.1 }}
-              className="text-center px-2">
-              <span className="font-display text-4xl text-[#c9a227]">{s.n}</span>
-              <div className="mx-auto my-4 h-px w-12 gold-rule" />
-              <h3 className="font-display text-xl mb-2">{s.title}</h3>
-              <p className="text-[15px] text-[#b6ad97] leading-relaxed">{s.body}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* FEATURES */}
-      <section id="features" className="border-y border-[#c9a227]/15 bg-[#161616]">
-        <div className="max-w-6xl mx-auto px-6 py-24">
-          <SectionHead kicker="Assurances" title="Why families place their trust here" />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-14">
-            {FEATURES.map((f, i) => (
-              <motion.div
-                key={f.title}
-                variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
-                transition={{ duration: 0.55, delay: i * 0.07 }}
-                className="rounded-sm border border-[#c9a227]/20 bg-[#1c1c1c] p-7 hover:border-[#c9a227]/50 transition">
-                <div className="text-2xl text-[#c9a227] mb-4">{f.icon}</div>
-                <h3 className="font-display text-xl mb-2.5">{f.title}</h3>
-                <p className="text-[15px] text-[#b6ad97] leading-relaxed">{f.body}</p>
-              </motion.div>
-            ))}
+        {/* step panel */}
+        <section className="min-h-[420px]">
+          <div className="mb-6">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-[#c9a227]/60">
+              Step {step + 1} of {STEPS.length}
+            </p>
+            <h2 className="font-display text-3xl font-semibold text-[#f3eee0]">
+              {STEPS[step].title}
+            </h2>
           </div>
-        </div>
-      </section>
 
-      {/* DEMO + REGISTRY */}
-      <section id="demo" className="max-w-6xl mx-auto px-6 py-24">
-        <SectionHead kicker="The Registry" title="Record a will, watch the conditions resolve" />
-        <div className="grid lg:grid-cols-[400px_1fr] gap-10 mt-14">
-          {/* form */}
-          <motion.form
-            onSubmit={handleSubmit}
-            variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} transition={{ duration: 0.55 }}
-            className="rounded-sm border border-[#c9a227]/30 bg-[#1c1c1c] p-7 h-fit">
-            <h3 className="font-display text-2xl text-[#c9a227] mb-1">Draft a bequest</h3>
-            <p className="text-sm text-[#b6ad97] mb-6">Validators review your conditions in ~3 seconds.</p>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -24 }}
+              transition={{ duration: 0.3 }}
+            >
+              {/* STEP 1 — CONDITIONS */}
+              {step === 0 && (
+                <div className="space-y-4">
+                  <p className="text-sm italic text-[#e8e3d6]/55">
+                    Write, in plain language, the circumstances under which this
+                    estate shall be released.
+                  </p>
+                  {will.conditions.map((c, i) => (
+                    <div key={c.id} className="flex items-start gap-3">
+                      <span className="mt-3 font-display text-[#c9a227]">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <textarea
+                        value={c.text}
+                        onChange={(e) => updateCondition(c.id, e.target.value)}
+                        rows={2}
+                        placeholder="e.g. Confirmed deceased per registry oracle…"
+                        className="flex-1 resize-none rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                      />
+                      {will.conditions.length > 1 && (
+                        <button
+                          onClick={() => removeCondition(c.id)}
+                          className="mt-2 text-[#e8e3d6]/30 transition hover:text-[#c9a227]"
+                          aria-label="Remove condition"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={addCondition}
+                    className="text-sm italic text-[#c9a227] underline-offset-4 transition hover:underline"
+                  >
+                    + add another condition
+                  </button>
+                </div>
+              )}
 
-            <label className="block text-sm text-[#b6ad97] mb-1.5">Title</label>
-            <input
-              value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Estate of J. Doe"
-              className="w-full bg-[#1a1a1a] border border-[#c9a227]/25 rounded-sm px-3.5 py-2.5 mb-4 text-[15px] placeholder-[#5c5648] outline-none focus:border-[#c9a227]" />
+              {/* STEP 2 — BENEFICIARY */}
+              {step === 1 && (
+                <div className="space-y-5">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Beneficiary name
+                    </label>
+                    <input
+                      value={will.beneficiary}
+                      onChange={(e) => set("beneficiary", e.target.value)}
+                      placeholder="Full legal name"
+                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Beneficiary wallet
+                    </label>
+                    <input
+                      value={will.beneficiaryAddr}
+                      onChange={(e) => set("beneficiaryAddr", e.target.value)}
+                      placeholder="0x…"
+                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 font-mono text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Bequeathed assets
+                    </label>
+                    <input
+                      value={will.asset}
+                      onChange={(e) => set("asset", e.target.value)}
+                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                    />
+                  </div>
+                </div>
+              )}
 
-            <label className="block text-sm text-[#b6ad97] mb-1.5">Conditions <span className="text-[#5c5648]">(one per line)</span></label>
-            <textarea
-              value={conditions} onChange={(e) => setConditions(e.target.value)} rows={4}
-              placeholder={'No activity on my address for 365 days\nDeath certificate filed to registry'}
-              className="w-full bg-[#1a1a1a] border border-[#c9a227]/25 rounded-sm px-3.5 py-2.5 mb-4 text-[15px] placeholder-[#5c5648] outline-none focus:border-[#c9a227] resize-none" />
+              {/* STEP 3 — CHECK SOURCE */}
+              {step === 2 && (
+                <div className="space-y-5">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Verification source
+                    </label>
+                    <select
+                      value={will.source}
+                      onChange={(e) => {
+                        const s = SOURCES.find((x) => x.id === e.target.value)!;
+                        set("source", s.id);
+                        set("sourceLabel", s.label);
+                        setChecks({});
+                      }}
+                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                    >
+                      {SOURCES.map((s) => (
+                        <option key={s.id} value={s.id} className="bg-[#222]">
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            <label className="block text-sm text-[#b6ad97] mb-1.5">Beneficiary</label>
-            <input
-              value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)}
-              placeholder="wallet address or ENS name"
-              className="w-full bg-[#1a1a1a] border border-[#c9a227]/25 rounded-sm px-3.5 py-2.5 mb-6 text-[15px] placeholder-[#5c5648] outline-none focus:border-[#c9a227]" />
+                  <div className="rounded-sm border border-[#c9a227]/15 bg-[#202020] p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm italic text-[#e8e3d6]/55">
+                        AI evaluation of each condition against the source
+                      </p>
+                      <button
+                        onClick={runSourceCheck}
+                        disabled={checking}
+                        className="rounded-sm border border-[#c9a227]/50 px-3 py-1 text-xs font-medium text-[#c9a227] transition hover:bg-[#c9a227]/10 disabled:opacity-50"
+                      >
+                        {checking ? "checking…" : "run check"}
+                      </button>
+                    </div>
+                    <ul className="space-y-2.5">
+                      {will.conditions
+                        .filter((c) => c.text.trim())
+                        .map((c) => (
+                          <li key={c.id} className="flex items-start gap-3 text-sm">
+                            <span
+                              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs transition ${
+                                checks[c.id]
+                                  ? "border-[#7da87d] bg-[#7da87d]/20 text-[#9fd09f]"
+                                  : "border-[#e8e3d6]/20 text-transparent"
+                              }`}
+                            >
+                              ✓
+                            </span>
+                            <span
+                              className={
+                                checks[c.id]
+                                  ? "text-[#f3eee0]"
+                                  : "text-[#e8e3d6]/50"
+                              }
+                            >
+                              {c.text}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
 
-            <button
-              type="submit" disabled={checking}
-              className="w-full rounded-sm py-3 bg-[#c9a227] text-[#1a1a1a] font-medium tracking-wide hover:bg-[#d9b43a] transition disabled:opacity-50 disabled:cursor-not-allowed">
-              {checking ? 'Validators reviewing…' : 'Record & verify'}
-            </button>
-          </motion.form>
+              {/* STEP 4 — REVIEW & SEAL */}
+              {step === 3 && (
+                <div className="space-y-5">
+                  <motion.article
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`relative rounded-sm border bg-[#211f1a] p-6 transition ${
+                      sealed ? "border-[#c9a227]" : "border-[#c9a227]/25"
+                    }`}
+                  >
+                    {sealed && (
+                      <motion.span
+                        initial={{ scale: 0, rotate: -20, opacity: 0 }}
+                        animate={{ scale: 1, rotate: -12, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 200 }}
+                        className="absolute -right-2 -top-3 flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#c9a227] bg-[#1A1A1A] font-display text-[10px] font-bold uppercase tracking-wider text-[#c9a227]"
+                      >
+                        Sealed
+                      </motion.span>
+                    )}
+                    <h3 className="font-display text-2xl text-[#f3eee0]">
+                      Last Will &amp; Testament
+                    </h3>
+                    <div className="gold-rule my-3 h-px" />
 
-          {/* will cards */}
-          <motion.div
-            id="registry"
-            variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} transition={{ duration: 0.55, delay: 0.1 }}
-            className="grid sm:grid-cols-2 gap-5">
-            {wills.map((will) => (
-              <motion.article
-                key={will.id} layout
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                className="rounded-sm border border-[#c9a227]/20 bg-[#1c1c1c] p-6 flex flex-col">
-                <div className="flex items-start justify-between mb-1">
-                  <span className="text-xs tracking-widest text-[#8a8169]">{will.id}</span>
-                  {will.checking ? (
-                    <span className="text-xs text-[#c9a227] animate-pulse">verifying…</span>
-                  ) : will.triggered ? (
-                    <span className="text-xs px-2 py-0.5 rounded-sm bg-[#c9a227]/15 text-[#c9a227] border border-[#c9a227]/40">TRIGGERED</span>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Beneficiary
+                    </p>
+                    <p className="mb-3 text-[#f3eee0]">
+                      {will.beneficiary || "—"}{" "}
+                      <span className="font-mono text-xs text-[#e8e3d6]/40">
+                        {will.beneficiaryAddr}
+                      </span>
+                    </p>
+
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Bequest
+                    </p>
+                    <p className="mb-3 text-[#f3eee0]">{will.asset}</p>
+
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Conditions ({will.sourceLabel})
+                    </p>
+                    <ul className="mt-1 space-y-1.5">
+                      {will.conditions
+                        .filter((c) => c.text.trim())
+                        .map((c) => (
+                          <li
+                            key={c.id}
+                            className="flex items-start gap-2 text-sm text-[#e8e3d6]/80"
+                          >
+                            <span
+                              className={
+                                checks[c.id]
+                                  ? "text-[#9fd09f]"
+                                  : "text-[#e8e3d6]/30"
+                              }
+                            >
+                              {checks[c.id] ? "✓" : "○"}
+                            </span>
+                            {c.text}
+                          </li>
+                        ))}
+                    </ul>
+
+                    <div className="gold-rule my-4 h-px" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs italic text-[#e8e3d6]/45">
+                        Trigger status
+                      </span>
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider ${
+                          allChecked
+                            ? "bg-[#7da87d]/20 text-[#9fd09f]"
+                            : "bg-[#e8e3d6]/10 text-[#e8e3d6]/50"
+                        }`}
+                      >
+                        {allChecked ? "Conditions met · armed" : "Pending verification"}
+                      </span>
+                    </div>
+                  </motion.article>
+
+                  {!sealed ? (
+                    <button
+                      onClick={seal}
+                      className="w-full rounded-sm bg-[#c9a227] py-3 font-display text-base font-semibold text-[#1A1A1A] transition hover:brightness-110"
+                    >
+                      ⚜ Seal &amp; commit on-chain
+                    </button>
                   ) : (
-                    <span className="text-xs px-2 py-0.5 rounded-sm bg-[#2a2a2a] text-[#b6ad97] border border-[#444]">PENDING</span>
+                    <p className="text-center text-sm italic text-[#9fd09f]">
+                      This instrument is now immutable and watching the source.
+                    </p>
                   )}
                 </div>
-                <h3 className="font-display text-xl mb-1">{will.title}</h3>
-                <p className="text-sm text-[#8a8169] mb-4">to <span className="text-[#c9a227]">{will.beneficiary}</span></p>
+              )}
+            </motion.div>
+          </AnimatePresence>
 
-                <ul className="space-y-2.5 mt-auto">
-                  {will.conditions.map((c, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-[14px]">
-                      <span className={`mt-0.5 grid place-items-center w-4 h-4 rounded-full text-[10px] shrink-0 ${c.met ? 'bg-[#c9a227] text-[#1a1a1a]' : 'border border-[#5c5648] text-transparent'}`}>
-                        ✓
-                      </span>
-                      <span className={c.met ? 'text-[#e8e3d6]' : 'text-[#8a8169]'}>{c.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </motion.article>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-[#c9a227]/15 bg-[#161616]">
-        <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row items-center justify-between gap-5">
-          <div className="flex items-center gap-3">
-            <span className="grid place-items-center w-9 h-9 rounded-full border border-[#c9a227] text-[#c9a227] font-display">W</span>
-            <span className="font-display text-xl">Will<span className="text-[#c9a227]">Executor</span></span>
-          </div>
-          <p className="text-xs text-[#8a8169] text-center break-all">
-            Contract <span className="text-[#c9a227]">{CONTRACT}</span> · GenLayer Bradbury
-          </p>
-          <p className="text-xs text-[#8a8169]">© {new Date().getFullYear()} WillExecutor</p>
-        </div>
-      </footer>
+          {/* nav controls */}
+          {!sealed && (
+            <div className="mt-10 flex items-center justify-between border-t border-[#c9a227]/15 pt-5">
+              <button
+                onClick={back}
+                disabled={step === 0}
+                className="text-sm text-[#e8e3d6]/60 transition hover:text-[#f3eee0] disabled:opacity-30"
+              >
+                ← Back
+              </button>
+              {step < STEPS.length - 1 && (
+                <button
+                  onClick={next}
+                  className="rounded-sm border border-[#c9a227]/60 px-6 py-2 text-sm font-medium text-[#c9a227] transition hover:bg-[#c9a227] hover:text-[#1A1A1A]"
+                >
+                  Next →
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
-  )
+  );
 }
 
-function SectionHead({ kicker, title }: { kicker: string; title: string }) {
-  return (
-    <motion.div
-      variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} transition={{ duration: 0.55 }}
-      className="text-center">
-      <p className="text-[#c9a227] tracking-[0.3em] text-xs uppercase mb-3">{kicker}</p>
-      <h2 className="font-display text-4xl md:text-5xl">{title}</h2>
-      <div className="mx-auto mt-5 h-px w-24 gold-rule" />
-    </motion.div>
-  )
-}
+export default App;
