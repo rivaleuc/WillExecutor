@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster, toast } from "sonner";
-
-const CONTRACT = "0xB0A44D12b898C641f2DD3d97c5268be076a56B80";
+import { read, write, CONTRACT } from "./genlayer";
 
 interface Condition {
   id: number;
@@ -16,6 +15,7 @@ interface WillState {
   asset: string;
   source: string;
   sourceLabel: string;
+  sourceUrl: string;
 }
 
 const STEPS = [
@@ -44,17 +44,29 @@ const initialWill: WillState = {
   asset: "12.5 ETH + estate vault NFTs",
   source: "registry",
   sourceLabel: SOURCES[0].label,
+  sourceUrl: "",
 };
 
 function App() {
   const [step, setStep] = useState(0);
   const [will, setWill] = useState<WillState>(initialWill);
   const [sealed, setSealed] = useState(false);
-  const [checks, setChecks] = useState<Record<number, boolean>>({});
+  const [sealing, setSealing] = useState(false);
+  const [willKey, setWillKey] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [triggered, setTriggered] = useState<boolean | null>(null);
+  const [reasoning, setReasoning] = useState("");
+  const [total, setTotal] = useState(0);
 
   const set = <K extends keyof WillState>(key: K, value: WillState[K]) =>
     setWill((w) => ({ ...w, [key]: value }));
+
+  // Load count of sealed wills from the contract on mount
+  useEffect(() => {
+    read("stats")
+      .then((s: any) => setTotal(Number(s?.total_wills ?? 0)))
+      .catch(() => {});
+  }, []);
 
   const addCondition = () =>
     setWill((w) => ({
@@ -93,37 +105,64 @@ function App() {
   };
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
-  const runSourceCheck = () => {
-    setChecking(true);
-    setChecks({});
-    toast.loading("AI verifying conditions against the source…", { id: "chk" });
-    const live = will.conditions.filter((c) => c.text.trim());
-    live.forEach((c, i) => {
-      setTimeout(
-        () => {
-          setChecks((prev) => ({ ...prev, [c.id]: true }));
-          if (i === live.length - 1) {
-            setChecking(false);
-            toast.success("All conditions evaluated against the source.", {
-              id: "chk",
-            });
-          }
-        },
-        700 * (i + 1)
-      );
+  const liveConditions = () => will.conditions.filter((c) => c.text.trim());
+
+  // FINAL STEP — commit the will on-chain
+  const seal = async () => {
+    setSealing(true);
+    const tId = toast.loading("Sealing will & committing on-chain… (30–60s)", {
+      id: "seal",
     });
+    try {
+      const conditions = liveConditions()
+        .map((c) => c.text.trim())
+        .join("\n");
+      const beneficiary = `${will.beneficiary.trim()}${
+        will.beneficiaryAddr.trim() ? ` <${will.beneficiaryAddr.trim()}>` : ""
+      }`;
+      const checkUrl = will.sourceUrl.trim() || will.sourceLabel;
+      await write("create_will", [conditions, beneficiary, checkUrl]);
+      const s: any = await read("stats");
+      const t = Number(s?.total_wills ?? 0);
+      setTotal(t);
+      setWillKey(String(Math.max(0, t - 1)));
+      setSealed(true);
+      toast.success("Will sealed and committed on-chain ⚜", { id: tId });
+    } catch (e: any) {
+      toast.error("Sealing failed", {
+        id: tId,
+        description: String(e?.message ?? e),
+      });
+    } finally {
+      setSealing(false);
+    }
   };
 
-  const seal = () => {
-    setSealed(true);
-    toast.success("Will sealed and committed on-chain ⚜", { id: "seal" });
+  // SEALED WILL — evaluate conditions against the source on-chain
+  const checkConditions = async () => {
+    if (willKey == null || checking) return;
+    setChecking(true);
+    const tId = toast.loading(
+      "AI evaluating conditions against the source on-chain… (30–60s)"
+    );
+    try {
+      await write("check_conditions", [willKey]);
+      const w: any = await read("get_will", [willKey]);
+      const trig = Boolean(w?.triggered);
+      setTriggered(trig);
+      setReasoning(String(w?.reasoning ?? ""));
+      if (trig)
+        toast.success("Conditions met — estate release is armed.", { id: tId });
+      else toast("Conditions not yet met.", { id: tId });
+    } catch (e: any) {
+      toast.error("Condition check failed", {
+        id: tId,
+        description: String(e?.message ?? e),
+      });
+    } finally {
+      setChecking(false);
+    }
   };
-
-  const allChecked =
-    will.conditions.filter((c) => c.text.trim()).length > 0 &&
-    will.conditions
-      .filter((c) => c.text.trim())
-      .every((c) => checks[c.id]);
 
   return (
     <div className="min-h-screen bg-[#1A1A1A] text-[#e8e3d6]">
@@ -143,9 +182,10 @@ function App() {
               </p>
             </div>
           </div>
-          <p className="hidden font-mono text-[10px] text-[#e8e3d6]/30 sm:block">
-            {CONTRACT}
-          </p>
+          <div className="hidden text-right sm:block">
+            <p className="font-display text-sm text-[#c9a227]">{total} sealed on-chain</p>
+            <p className="font-mono text-[10px] text-[#e8e3d6]/30">{CONTRACT}</p>
+          </div>
         </div>
         <div className="gold-rule mx-auto mt-6 h-px max-w-5xl" />
       </header>
@@ -300,7 +340,6 @@ function App() {
                         const s = SOURCES.find((x) => x.id === e.target.value)!;
                         set("source", s.id);
                         set("sourceLabel", s.label);
-                        setChecks({});
                       }}
                       className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
                     >
@@ -312,44 +351,33 @@ function App() {
                     </select>
                   </div>
 
+                  <div>
+                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                      Source URL the AI will read
+                    </label>
+                    <input
+                      value={will.sourceUrl}
+                      onChange={(e) => set("sourceUrl", e.target.value)}
+                      placeholder="https://registry.gov/record/…"
+                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 font-mono text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
+                    />
+                  </div>
+
                   <div className="rounded-sm border border-[#c9a227]/15 bg-[#202020] p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-sm italic text-[#e8e3d6]/55">
-                        AI evaluation of each condition against the source
-                      </p>
-                      <button
-                        onClick={runSourceCheck}
-                        disabled={checking}
-                        className="rounded-sm border border-[#c9a227]/50 px-3 py-1 text-xs font-medium text-[#c9a227] transition hover:bg-[#c9a227]/10 disabled:opacity-50"
-                      >
-                        {checking ? "checking…" : "run check"}
-                      </button>
-                    </div>
-                    <ul className="space-y-2.5">
-                      {will.conditions
-                        .filter((c) => c.text.trim())
-                        .map((c) => (
-                          <li key={c.id} className="flex items-start gap-3 text-sm">
-                            <span
-                              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs transition ${
-                                checks[c.id]
-                                  ? "border-[#7da87d] bg-[#7da87d]/20 text-[#9fd09f]"
-                                  : "border-[#e8e3d6]/20 text-transparent"
-                              }`}
-                            >
-                              ✓
-                            </span>
-                            <span
-                              className={
-                                checks[c.id]
-                                  ? "text-[#f3eee0]"
-                                  : "text-[#e8e3d6]/50"
-                              }
-                            >
-                              {c.text}
-                            </span>
-                          </li>
-                        ))}
+                    <p className="text-sm italic text-[#e8e3d6]/55">
+                      Once sealed, the autonomous instrument will read this source on-chain.
+                      A GenLayer validator evaluates every condition against the live
+                      data and decides — independently — whether the estate trigger fires.
+                    </p>
+                    <ul className="mt-3 space-y-2.5">
+                      {liveConditions().map((c) => (
+                        <li key={c.id} className="flex items-start gap-3 text-sm">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#e8e3d6]/20 text-xs text-[#c9a227]">
+                            ◆
+                          </span>
+                          <span className="text-[#e8e3d6]/70">{c.text}</span>
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 </div>
@@ -399,55 +427,83 @@ function App() {
                       Conditions ({will.sourceLabel})
                     </p>
                     <ul className="mt-1 space-y-1.5">
-                      {will.conditions
-                        .filter((c) => c.text.trim())
-                        .map((c) => (
-                          <li
-                            key={c.id}
-                            className="flex items-start gap-2 text-sm text-[#e8e3d6]/80"
+                      {liveConditions().map((c) => (
+                        <li
+                          key={c.id}
+                          className="flex items-start gap-2 text-sm text-[#e8e3d6]/80"
+                        >
+                          <span
+                            className={
+                              triggered ? "text-[#9fd09f]" : "text-[#e8e3d6]/30"
+                            }
                           >
-                            <span
-                              className={
-                                checks[c.id]
-                                  ? "text-[#9fd09f]"
-                                  : "text-[#e8e3d6]/30"
-                              }
-                            >
-                              {checks[c.id] ? "✓" : "○"}
-                            </span>
-                            {c.text}
-                          </li>
-                        ))}
+                            {triggered ? "✓" : "○"}
+                          </span>
+                          {c.text}
+                        </li>
+                      ))}
                     </ul>
 
                     <div className="gold-rule my-4 h-px" />
                     <div className="flex items-center justify-between">
                       <span className="text-xs italic text-[#e8e3d6]/45">
                         Trigger status
+                        {willKey != null && (
+                          <span className="ml-2 font-mono not-italic text-[#c9a227]/60">#{willKey}</span>
+                        )}
                       </span>
                       <span
                         className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider ${
-                          allChecked
+                          triggered === true
                             ? "bg-[#7da87d]/20 text-[#9fd09f]"
-                            : "bg-[#e8e3d6]/10 text-[#e8e3d6]/50"
+                            : triggered === false
+                              ? "bg-[#a8807d]/20 text-[#d8a39f]"
+                              : "bg-[#e8e3d6]/10 text-[#e8e3d6]/50"
                         }`}
                       >
-                        {allChecked ? "Conditions met · armed" : "Pending verification"}
+                        {triggered === true
+                          ? "Conditions met · armed"
+                          : triggered === false
+                            ? "Not triggered"
+                            : sealed
+                              ? "Awaiting condition check"
+                              : "Pending verification"}
                       </span>
                     </div>
+
+                    {reasoning && (
+                      <div className="mt-4 rounded-sm border border-[#c9a227]/15 bg-[#1A1A1A] p-3">
+                        <p className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[#c9a227]/60">
+                          AI reasoning
+                        </p>
+                        <p className="text-sm italic leading-relaxed text-[#e8e3d6]/75">
+                          {reasoning}
+                        </p>
+                      </div>
+                    )}
                   </motion.article>
 
                   {!sealed ? (
                     <button
                       onClick={seal}
-                      className="w-full rounded-sm bg-[#c9a227] py-3 font-display text-base font-semibold text-[#1A1A1A] transition hover:brightness-110"
+                      disabled={sealing}
+                      className="w-full rounded-sm bg-[#c9a227] py-3 font-display text-base font-semibold text-[#1A1A1A] transition hover:brightness-110 disabled:opacity-50"
                     >
-                      ⚜ Seal &amp; commit on-chain
+                      {sealing ? "⚜ Committing on-chain…" : "⚜ Seal & commit on-chain"}
                     </button>
                   ) : (
-                    <p className="text-center text-sm italic text-[#9fd09f]">
-                      This instrument is now immutable and watching the source.
-                    </p>
+                    <div className="space-y-3">
+                      <button
+                        onClick={checkConditions}
+                        disabled={checking}
+                        className="w-full rounded-sm border border-[#c9a227]/60 py-3 font-display text-base font-semibold text-[#c9a227] transition hover:bg-[#c9a227] hover:text-[#1A1A1A] disabled:opacity-50"
+                      >
+                        {checking ? "Evaluating on-chain…" : "⟳ Check conditions against source"}
+                      </button>
+                      <p className="text-center text-sm italic text-[#9fd09f]">
+                        This instrument is now immutable and watching the source.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
