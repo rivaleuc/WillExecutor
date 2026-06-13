@@ -1,16 +1,43 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WillExecutor</title><script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-gray-950 text-white min-h-screen p-6"><div class="max-w-2xl mx-auto">
-<h1 class="text-2xl font-bold mb-6">📜 WillExecutor</h1>
-<div class="bg-gray-900 rounded-xl p-6 mb-4 border border-gray-800 space-y-3">
-<h2 class="text-teal-400 font-semibold">Create Will</h2>
-<textarea placeholder="Conditions in plain language..." rows="3" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 outline-none resize-none"></textarea>
-<input placeholder="Beneficiary address" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 outline-none">
-<input placeholder="Check URL (fetched to verify conditions)" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 outline-none">
-<button class="w-full bg-teal-600 hover:bg-teal-700 rounded-lg py-3 font-bold">Create Will</button>
-</div>
-<div class="bg-gray-900 rounded-xl p-6 border border-gray-800 space-y-3">
-<h2 class="text-orange-400 font-semibold">Check Conditions</h2>
-<input placeholder="Will key" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 outline-none">
-<button class="w-full bg-orange-600 hover:bg-orange-700 rounded-lg py-3 font-bold">⏰ Check Now</button>
-</div>
-</div></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WillExecutor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0c0c0c] text-white min-h-screen">
+  <nav class="border-b border-gray-800 px-6 py-4 flex justify-between items-center">
+    <div class="flex items-center gap-2"><span class="text-2xl">📜</span><h1 class="text-xl font-bold">WillExecutor</h1></div>
+    <span class="text-xs text-teal-400">Digital Will Protocol</span>
+  </nav>
+  <main class="max-w-3xl mx-auto p-6 space-y-6">
+    <!-- Create Will -->
+    <section class="bg-[#141414] rounded-2xl p-6 border border-gray-800">
+      <h2 class="text-teal-400 font-semibold mb-4">Create Digital Will</h2>
+      <textarea placeholder="Conditions in plain language (e.g. 'If no GitHub activity for 180 days...')" rows="3" class="w-full bg-black border border-gray-800 rounded-xl px-4 py-3 mb-3 placeholder-gray-600 outline-none resize-none"></textarea>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <input placeholder="Beneficiary address" class="bg-black border border-gray-800 rounded-xl px-4 py-3 placeholder-gray-600 outline-none">
+        <input placeholder="Check URL" class="bg-black border border-gray-800 rounded-xl px-4 py-3 placeholder-gray-600 outline-none">
+      </div>
+      <button class="w-full bg-teal-600 hover:bg-teal-500 rounded-xl py-3 font-bold transition">Create Will</button>
+    </section>
+
+    <!-- Active Will -->
+    <section class="bg-[#141414] rounded-2xl p-6 border border-teal-900/50">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="font-semibold">Will #0</h3>
+        <span class="px-3 py-1 bg-teal-900/30 text-teal-400 text-xs rounded-full">⏳ Active — Not Triggered</span>
+      </div>
+      <div class="bg-black rounded-xl p-4 mb-3">
+        <p class="text-sm text-gray-300">"If no commits on GitHub for 180 days, transfer to beneficiary"</p>
+      </div>
+      <div class="grid grid-cols-3 gap-3 text-center text-sm">
+        <div class="bg-black rounded-lg p-3"><p class="text-xs text-gray-500">Checks</p><p class="font-bold">0</p></div>
+        <div class="bg-black rounded-lg p-3"><p class="text-xs text-gray-500">Triggered</p><p class="font-bold text-green-400">No</p></div>
+        <div class="bg-black rounded-lg p-3"><p class="text-xs text-gray-500">Beneficiary</p><p class="font-mono text-xs text-gray-400">0x1234...</p></div>
+      </div>
+      <button class="w-full mt-4 bg-amber-900/50 border border-amber-800 hover:bg-amber-800/50 rounded-xl py-2.5 text-sm font-semibold text-amber-300 transition">⏰ Check Conditions Now</button>
+    </section>
+  </main>
+</body>
+</html>
