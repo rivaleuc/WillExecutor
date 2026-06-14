@@ -10,10 +10,6 @@ Will conditions like "if I don't commit to GitHub for 180 days" require fetching
 
 **GenLayer (Bradbury):** `0xB0A44D12b898C641f2DD3d97c5268be076a56B80`
 
-## Test
-
-Created will: "If no commits for 180 days, transfer to beneficiary" (check_url: github.com/rivaleuc) → triggered: false, conditions not met yet.
-
 ## Structure
 
 ```
