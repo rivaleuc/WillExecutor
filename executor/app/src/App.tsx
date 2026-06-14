@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster, toast } from "sonner";
-import { read, write, CONTRACT } from "./genlayer";
+import { read, write, CONTRACT, connectWallet, isWalletConnected } from "./genlayer";
 
 interface Condition {
   id: number;
@@ -57,6 +57,23 @@ function App() {
   const [triggered, setTriggered] = useState<boolean | null>(null);
   const [reasoning, setReasoning] = useState("");
   const [total, setTotal] = useState(0);
+  const [wallet, setWallet] = useState<string | null>(null);
+
+  const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+
+  const handleConnect = async () => {
+    try {
+      const addr = await connectWallet();
+      setWallet(addr);
+      toast.success(
+        `Wallet ${isWalletConnected() ? "connected" : "linked"} · ${shortAddr(addr)}`
+      );
+    } catch (e: any) {
+      toast.error("Wallet connection failed", {
+        description: String(e?.message ?? e),
+      });
+    }
+  };
 
   const set = <K extends keyof WillState>(key: K, value: WillState[K]) =>
     setWill((w) => ({ ...w, [key]: value }));
@@ -182,9 +199,17 @@ function App() {
               </p>
             </div>
           </div>
-          <div className="hidden text-right sm:block">
-            <p className="font-display text-sm text-[#c9a227]">{total} sealed on-chain</p>
-            <p className="font-mono text-[10px] text-[#e8e3d6]/30">{CONTRACT}</p>
+          <div className="flex items-center gap-4">
+            <div className="hidden text-right sm:block">
+              <p className="font-display text-sm text-[#c9a227]">{total} sealed on-chain</p>
+              <p className="font-mono text-[10px] text-[#e8e3d6]/30">{CONTRACT}</p>
+            </div>
+            <button
+              onClick={handleConnect}
+              className="rounded-sm border border-[#c9a227]/60 px-4 py-2 font-display text-sm font-medium text-[#c9a227] transition hover:bg-[#c9a227] hover:text-[#1A1A1A]"
+            >
+              {wallet ? `⚜ ${shortAddr(wallet)}` : "Connect Wallet"}
+            </button>
           </div>
         </div>
         <div className="gold-rule mx-auto mt-6 h-px max-w-5xl" />
