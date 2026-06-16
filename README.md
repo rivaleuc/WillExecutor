@@ -4,8 +4,8 @@
 
 WillExecutor lets you encode an inheritance condition in natural language ("if this obituary page goes live", "if this account is inactive for a year") together with a URL the contract can read. Anyone can poke the will to re-check; GenLayer validators fetch the referenced data and judge whether the condition is met, flipping the will to triggered by consensus. A separate read method exposes the trigger state so downstream systems (or an EVM payout contract) can act on it.
 
-- **Contract (Bradbury, chain 4221):** `0xB0A44D12b898C641f2DD3d97c5268be076a56B80`
-- **Explorer:** https://explorer-bradbury.genlayer.com/contract/0xB0A44D12b898C641f2DD3d97c5268be076a56B80
+- **Contract (Bradbury, chain 4221):** `0x43c905a68c4f3aD67937eE9401E305B1f7f05f55`
+- **Explorer:** https://explorer-bradbury.genlayer.com/contract/0x43c905a68c4f3aD67937eE9401E305B1f7f05f55
 - **Live app:** https://willexecutor.pages.dev
 
 ## What it does

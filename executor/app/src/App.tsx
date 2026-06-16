@@ -12,7 +12,6 @@ interface WillState {
   conditions: Condition[];
   beneficiary: string;
   beneficiaryAddr: string;
-  asset: string;
   source: string;
   sourceLabel: string;
   sourceUrl: string;
@@ -41,7 +40,6 @@ const initialWill: WillState = {
   ],
   beneficiary: "",
   beneficiaryAddr: "",
-  asset: "12.5 ETH + estate vault NFTs",
   source: "registry",
   sourceLabel: SOURCES[0].label,
   sourceUrl: "",
@@ -169,7 +167,7 @@ function App() {
       setTriggered(trig);
       setReasoning(String(w?.reasoning ?? ""));
       if (trig)
-        toast.success("Conditions met — estate release is armed.", { id: tId });
+        toast.success("Conditions met — trigger fired on-chain.", { id: tId });
       else toast("Conditions not yet met.", { id: tId });
     } catch (e: any) {
       toast.error("Condition check failed", {
@@ -339,16 +337,6 @@ function App() {
                       className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 font-mono text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
                     />
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
-                      Bequeathed assets
-                    </label>
-                    <input
-                      value={will.asset}
-                      onChange={(e) => set("asset", e.target.value)}
-                      className="w-full rounded-sm border border-[#c9a227]/20 bg-[#222] px-3 py-2.5 text-sm text-[#f3eee0] outline-none focus:border-[#c9a227]/60"
-                    />
-                  </div>
                 </div>
               )}
 
@@ -444,11 +432,6 @@ function App() {
                     </p>
 
                     <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
-                      Bequest
-                    </p>
-                    <p className="mb-3 text-[#f3eee0]">{will.asset}</p>
-
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a227]/60">
                       Conditions ({will.sourceLabel})
                     </p>
                     <ul className="mt-1 space-y-1.5">
@@ -526,7 +509,7 @@ function App() {
                         {checking ? "Evaluating on-chain…" : "⟳ Check conditions against source"}
                       </button>
                       <p className="text-center text-sm italic text-[#9fd09f]">
-                        This instrument is now immutable and watching the source.
+                        Sealed on-chain — run a condition check against the source any time.
                       </p>
                     </div>
                   )}
